@@ -692,13 +692,8 @@ function setupAuthForms() {
       const mode = tab.dataset.authMode;
       clearAuthMessage();
       setAuthMode(mode);
-      navigateAuth(mode, false);
-      const config = await loadAuthConfig().catch(() => null);
-      if (String(config?.authProvider || "").toLowerCase() === "clerk") {
-        await showClerkAuthUi(mode).catch((error) => {
-          showAuthMessage(error.message || "Auth provider not configured.", "error");
-        });
-      }
+      // Force a full navigation so Clerk UI re-initializes cleanly (avoids SPA mount issues)
+      window.location.href = authPath(mode);
     });
   });
 
