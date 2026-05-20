@@ -3,17 +3,20 @@ const SETTINGS_CACHE_KEY = "imsSystemSettingsDraft";
 const SETTINGS_API_BASE = "/api/settings";
 const THEME_STORAGE_KEY = "imsTheme";
 const BUSINESS_DATA_API_BASE = "/api";
-const CLERK_JS_URL = "https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5.56.0/dist/clerk.browser.js";
 let seedTxCounter = 0;
-let currentUser = null;
-let isAdmin = false;
+let currentUser = {
+  id: 1,
+  uid: "local-admin",
+  name: "Inventory Manager",
+  email: "",
+  role: "Admin",
+  roles: ["Admin"],
+  permissions: [],
+  status: "active"
+};
+let isAdmin = true;
 let settingsLoadedForUser = "";
-let pendingVerificationEmail = "";
 let businessDataLoadedForUser = "";
-let authConfig = null;
-let clerk = null;
-let clerkAuthMountedMode = "";
-let clerkAuthStateSyncing = false;
 
 const seedState = {
   locations: [],
@@ -103,7 +106,7 @@ const settingsSections = [
     ["notify_procurement_out_of_stock", "Notify procurement automatically", "checkbox"], ["create_procurement_queue_notification", "Create procurement queue notification", "checkbox"],
     ["procurement_notifications_heading", "Procurement Notifications", "heading"],
     ["notify_procurement_stock_unavailable", "Notify procurement when stock unavailable", "checkbox"], ["notify_procurement_request_requires_po", "Notify procurement when request requires PO", "checkbox"],
-    ["notify_finance_po_authorization", "Notify finance when PO requires authorization", "checkbox"], ["notify_ed_po_approval", "Notify ED when PO requires approval", "checkbox"],
+    ["notify_finance_po_approval", "Notify finance when PO requires approval", "checkbox"], ["notify_ed_po_approval", "Notify ED when PO requires approval", "checkbox"],
     ["email_po_to_vendor", "Email PO to vendor", "checkbox"], ["send_revised_po_notification", "Send revised PO notification", "checkbox"], ["send_po_cancellation_notification", "Send PO cancellation notification", "checkbox"],
     ["grn_notifications_heading", "GRN Notifications", "heading"],
     ["notify_inventory_grn_creation", "Notify inventory after GRN creation", "checkbox"], ["notify_procurement_grn_completion", "Notify procurement after GRN completion", "checkbox"],
@@ -112,10 +115,6 @@ const settingsSections = [
     ["transport_notifications_heading", "Transport Notifications", "heading"],
     ["notify_transport_focal_person", "Notify transport focal person", "checkbox"], ["notify_requester_transport_arrangement", "Notify requester after transport arrangement", "checkbox"],
     ["notify_requester_transport_decision", "Notify requester after transport approval/rejection", "checkbox"],
-    ["system_notifications_heading", "System Notifications", "heading"],
-    ["notify_new_user_account_creation", "Notify new users about account creation", "checkbox"], ["notify_password_reset", "Notify users about password reset", "checkbox"],
-    ["notify_account_deactivation", "Notify users about account deactivation", "checkbox"], ["failed_login_alerts", "Failed login alerts", "checkbox"],
-    ["suspicious_activity_alerts", "Suspicious activity alerts", "checkbox"], ["session_expiration_alerts", "Session expiration alerts", "checkbox"],
     ["notification_channels_heading", "Notification Channels", "heading"],
     ["enable_email_notifications", "Enable email notifications", "checkbox"], ["notification_sender_email", "Configure sender email", "email"], ["smtp_configuration", "Configure SMTP", "textarea"],
     ["enable_sms_notifications_later", "SMS notifications (later version)", "checkbox"], ["enable_whatsapp_notifications_later", "WhatsApp notifications (later version)", "checkbox"],
@@ -132,10 +131,6 @@ const settingsSections = [
     ["stock_issue_slip_settings", "Stock issue slip settings", "textarea"], ["signature_labels", "Signature labels", "textarea"], ["footer_text", "Footer text", "textarea"],
     ["terms_conditions", "Terms and conditions", "textarea"]
   ] },
-  { group: "security", title: "Security", icon: "shield-check", description: "Session, password, login attempt, and audit log controls.", fields: [
-    ["session_timeout_minutes", "Session timeout (minutes)", "number", true], ["password_rules", "Password rules", "textarea", true],
-    ["login_attempt_limit", "Login attempt limit", "number", true], ["audit_log_enabled", "Audit log enabled", "checkbox"]
-  ] }
 ];
 
 function tx(itemCode, location, type, quantity, sourceId, notes) {
@@ -260,263 +255,11 @@ function initialsFor(nameOrEmail) {
   return parts.slice(0, 2).map((part) => part[0] || "").join("").toUpperCase() || "IM";
 }
 
-function setAuthBusy(formOrButton, busy) {
-  const controls = formOrButton.matches?.("form") ? formOrButton.querySelectorAll("button, input, select") : [formOrButton];
-  controls.forEach((control) => {
-    control.disabled = busy;
-  });
-}
-
-function authRouteFromLocation() {
-  const path = window.location.pathname.replace(/\/+$/, "") || "/";
-  if (path.endsWith("/verify-email") || path.endsWith("/verify-email.html")) return "verify";
-  if (path.endsWith("/signup") || path.endsWith("/signup.html")) return "signup";
-  if (path.endsWith("/login") || path.endsWith("/login.html")) return "login";
-  return "";
-}
-
-function authPath(mode) {
-  return {
-    login: "/login.html",
-    signup: "/signup.html",
-    verify: "/verify-email.html",
-    dashboard: "/"
-  }[mode] || "/";
-}
-
-function navigateAuth(mode, replace = true) {
-  if (window.location.protocol === "file:") return;
-  const target = authPath(mode);
-  if (window.location.pathname === target) return;
-  window.history[replace ? "replaceState" : "pushState"]({}, "", target);
-}
-
-function showAuthMessage(message, type = "error") {
-  const messageBox = document.getElementById("authMessage");
-  if (!messageBox) return showToast(message, type);
-  messageBox.textContent = message;
-  messageBox.className = `auth-message show ${type}`;
-}
-
-function clearAuthMessage() {
-  const messageBox = document.getElementById("authMessage");
-  if (!messageBox) return;
-  messageBox.textContent = "";
-  messageBox.className = "auth-message";
-}
-
-function setAuthMode(mode) {
-  const panel = document.querySelector(".auth-panel");
-  panel?.classList.toggle("verify-mode", mode === "verify");
-  document.querySelectorAll(".auth-tab[data-auth-mode]").forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.authMode === mode);
-  });
-  document.getElementById("clerk-sign-in")?.classList.toggle("active", mode === "login");
-  document.getElementById("clerk-sign-up")?.classList.toggle("active", mode === "signup");
-  document.querySelectorAll("[data-auth-form]").forEach((form) => {
-    form.classList.toggle("active", form.dataset.authForm === mode);
-  });
-  if (window.lucide) window.lucide.createIcons();
-}
-
-function clearClerkAuthHosts() {
-  ["clerk-sign-in", "clerk-sign-up"].forEach((id) => {
-    document.getElementById(id)?.replaceChildren();
-  });
-}
-
-function hideCustomAuthForms() {
-  document.querySelectorAll("[data-auth-form]").forEach((form) => {
-    form.setAttribute("hidden", "");
-    form.classList.remove("active");
-  });
-}
-
-function showCustomAuthForms() {
-  document.querySelector(".auth-tabs")?.removeAttribute("hidden");
-  document.querySelectorAll("[data-auth-form]").forEach((form) => {
-    form.removeAttribute("hidden");
-  });
-  clearClerkAuthHosts();
-  clerkAuthMountedMode = "";
-}
-
-async function loadAuthConfig() {
-  if (authConfig) return authConfig;
-  const response = await fetch("/api/config");
-  const data = await response.json().catch(() => ({}));
-  authConfig = {
-    authProvider: data.authProvider || data.data?.authProvider || data.data?.provider || "none",
-    clerkPublishableKey: data.clerkPublishableKey || data.data?.clerkPublishableKey || ""
-  };
-  console.info("Clerk config loaded");
-  return authConfig;
-}
-
-function isValidClerkPublishableKey(value) {
-  return /^pk_(test|live)_/.test(String(value || "").trim());
-}
-
-function loadClerkBrowserSdk(clerkPublishableKey) {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${CLERK_JS_URL}"]`);
-    if (existing) {
-      if (!existing.dataset.clerkPublishableKey) existing.dataset.clerkPublishableKey = clerkPublishableKey;
-      if (window.Clerk) {
-        console.info("Clerk SDK loaded");
-        resolve();
-        return;
-      }
-      existing.addEventListener("load", resolve, { once: true });
-      existing.addEventListener("error", reject, { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = CLERK_JS_URL;
-    script.async = true;
-    script.crossOrigin = "anonymous";
-    script.dataset.clerkPublishableKey = clerkPublishableKey;
-    script.onload = () => {
-      console.info("Clerk SDK loaded");
-      resolve();
-    };
-    script.onerror = () => reject(new Error("Could not load Clerk browser SDK."));
-    document.head.appendChild(script);
-  });
-}
-
-async function getClerk() {
-  clearAuthMessage();
-  const config = await loadAuthConfig();
-  if (String(config.authProvider || "").toLowerCase() !== "clerk") return null;
-  const clerkPublishableKey = String(config.clerkPublishableKey || "").trim();
-  if (!clerkPublishableKey) throw new Error("Clerk publishable key is missing from /api/config.");
-  if (!isValidClerkPublishableKey(clerkPublishableKey)) throw new Error("Clerk publishable key from /api/config is invalid.");
-  if (clerk) {
-    clearAuthMessage();
-    return clerk;
-  }
-  await loadClerkBrowserSdk(clerkPublishableKey);
-  if (!window.Clerk) throw new Error("Clerk browser SDK did not load correctly.");
-  clerk = window.Clerk;
-  await clerk.load({ publishableKey: clerkPublishableKey });
-  console.info("Clerk initialized");
-  clearAuthMessage();
-  return clerk;
-}
-
-function hasClerkSession(activeClerk) {
-  return Boolean(activeClerk?.user && activeClerk?.session);
-}
-
-async function showClerkAuthUi(mode = "login") {
-  clearAuthMessage();
-  const activeClerk = await getClerk();
-  if (!activeClerk) {
-    showCustomAuthForms();
-    return;
-  }
-  clearCurrentUserSession();
-  cleanupLegacyAuthStorage();
-  document.body.classList.remove("auth-pending");
-  document.body.classList.add("auth-required");
-  applyAdminVisibility();
-  const normalizedMode = mode === "signup" ? "signup" : "login";
-  navigateAuth(normalizedMode);
-  setAuthMode(normalizedMode);
-  hideCustomAuthForms();
-  const host = document.getElementById(normalizedMode === "signup" ? "clerk-sign-up" : "clerk-sign-in");
-  if (!host) throw new Error("Clerk sign-in target is missing.");
-  if (clerkAuthMountedMode === normalizedMode && host.childNodes.length) return;
-  activeClerk.unmountSignIn?.(document.getElementById("clerk-sign-in"));
-  activeClerk.unmountSignUp?.(document.getElementById("clerk-sign-up"));
-  clearClerkAuthHosts();
-  if (typeof activeClerk.mountSignIn !== "function" || typeof activeClerk.mountSignUp !== "function") {
-    throw new Error("Clerk was not loaded with UI components.");
-  }
-  const options = {
-    signInUrl: "/login.html",
-    signUpUrl: "/signup.html",
-    afterSignInUrl: "/",
-    afterSignUpUrl: "/",
-    appearance: {
-      variables: {
-        colorPrimary: "#16895e",
-        colorText: "#20313a",
-        colorTextSecondary: "#7e8a94",
-        borderRadius: "8px",
-        fontFamily: '"Inter", Arial, sans-serif'
-      },
-      elements: {
-        card: "ims-clerk-card",
-        formButtonPrimary: "ims-clerk-primary"
-      }
-    }
-  };
-  if (normalizedMode === "signup") {
-    activeClerk.mountSignUp(host, options);
-  } else {
-    activeClerk.mountSignIn(host, options);
-  }
-  console.info("Clerk UI mounted");
-  
-  // Hide Clerk footer (Secured by Clerk + Development mode)
-  setTimeout(() => {
-    const host = document.getElementById(normalizedMode === "signup" ? "clerk-sign-up" : "clerk-sign-in");
-    if (host) {
-      const allElements = host.querySelectorAll('*');
-      allElements.forEach(el => {
-        if (el.textContent && (el.textContent.trim() === 'Secured by' || el.textContent.trim() === 'Development mode')) {
-          el.style.display = 'none';
-        }
-        // Also hide parent containers that only contain these texts
-        if (el.children.length === 0 && (el.textContent.includes('Secured by') || el.textContent.includes('Development mode'))) {
-          const parent = el.parentElement;
-          if (parent && parent.textContent.includes('Secured by') && parent.textContent.includes('Development mode')) {
-            parent.style.display = 'none';
-          }
-        }
-      });
-    }
-  }, 100);
-  
-  clearAuthMessage();
-  clerkAuthMountedMode = normalizedMode;
-}
-
-async function authHeaders() {
-  const activeClerk = await getClerk();
-  if (!activeClerk) return {};
-  if (!hasClerkSession(activeClerk)) {
-    const error = new Error("Sign in with Clerk to continue.");
-    error.statusCode = 401;
-    error.requiresSignIn = true;
-    throw error;
-  }
-  const token = await activeClerk.session.getToken();
-  if (!token) {
-    const error = new Error("Clerk session token is unavailable. Please sign in again.");
-    error.statusCode = 401;
-    error.requiresSignIn = true;
-    throw error;
-  }
-  return { Authorization: `Bearer ${token}` };
-}
-
 async function apiRequest(path, options = {}) {
-  let headers;
-  try {
-    headers = await authHeaders();
-  } catch (error) {
-    if (error.requiresSignIn || error.statusCode === 401) await showClerkAuthUi(authRouteFromLocation() === "signup" ? "signup" : "login");
-    throw error;
-  }
   const response = await fetch(`${BUSINESS_DATA_API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...headers,
       ...(options.headers || {})
     }
   });
@@ -524,51 +267,9 @@ async function apiRequest(path, options = {}) {
   if (!response.ok) {
     const error = new Error(data.error?.message || "IMS API request failed.");
     error.statusCode = response.status;
-    if (response.status === 401) error.requiresSignIn = true;
-    if (response.status === 403) error.accessDenied = true;
-    if (error.requiresSignIn) await showClerkAuthUi(authRouteFromLocation() === "signup" ? "signup" : "login");
     throw error;
   }
   return data;
-}
-
-async function loadCurrentUserFromBackend() {
-  const data = await apiRequest("/auth/me");
-  const profile = data.user || {};
-  const primaryRole = profile.roles?.[0] || "Requester";
-  currentUser = {
-    id: profile.id,
-    uid: profile.subject || String(profile.id || ""),
-    name: profile.name || profile.email || "IMS User",
-    email: profile.email || "",
-    role: primaryRole,
-    roles: profile.roles || [primaryRole],
-    permissions: profile.permissions || [],
-    status: profile.status || "active"
-  };
-  isAdmin = currentUser.roles.includes("Admin");
-  return currentUser;
-}
-
-function clearCurrentUserSession() {
-  currentUser = null;
-  isAdmin = false;
-  settingsLoadedForUser = "";
-  businessDataLoadedForUser = "";
-}
-
-function cleanupLegacyAuthStorage() {
-  ["isLoggedIn", "currentUser", "authUser", "demoUser", "imsCurrentUser", "imsLocalAuthUser"].forEach((key) => {
-    localStorage.removeItem(key);
-    sessionStorage.removeItem(key);
-  });
-  localStorage.removeItem(STORAGE_KEY);
-}
-
-function updateVerifyEmailAddress() {
-  const emailTarget = document.getElementById("verifyEmailAddress");
-  if (!emailTarget) return;
-  emailTarget.textContent = currentUser?.email || pendingVerificationEmail || "your email address";
 }
 
 async function refreshVerifiedUserShell() {
@@ -586,23 +287,6 @@ async function refreshVerifiedUserShell() {
 }
 
 function syncAuthState() {
-  document.body.classList.remove("auth-pending");
-  updateVerifyEmailAddress();
-
-  if (!currentUser) {
-    cleanupLegacyAuthStorage();
-    document.body.classList.add("auth-required");
-    const route = authRouteFromLocation();
-    setAuthMode(route === "signup" ? "signup" : route === "verify" ? "verify" : "login");
-    if (!route) navigateAuth("login");
-    applyAdminVisibility();
-    return;
-  }
-
-  cleanupLegacyAuthStorage();
-  document.body.classList.remove("auth-required");
-  if (["login", "signup", "verify"].includes(authRouteFromLocation())) navigateAuth("dashboard");
-
   document.querySelectorAll(".profile").forEach((button) => {
     button.setAttribute("aria-label", currentUser.name || currentUser.email || "IMS User");
     button.dataset.profileName = currentUser.name || currentUser.email || "IMS User";
@@ -614,125 +298,6 @@ function syncAuthState() {
     avatar.textContent = initialsFor(currentUser.name || currentUser.email);
   });
   refreshVerifiedUserShell();
-}
-
-async function syncClerkAuthState() {
-  if (clerkAuthStateSyncing) return;
-  clerkAuthStateSyncing = true;
-  const route = authRouteFromLocation();
-  clearAuthMessage();
-  try {
-    const activeClerk = await getClerk();
-    if (!activeClerk) {
-      await loadCurrentUserFromBackend();
-      clearAuthMessage();
-      syncAuthState();
-      return;
-    }
-
-    if (!hasClerkSession(activeClerk)) {
-      clearAuthMessage();
-      await showClerkAuthUi(route === "signup" ? "signup" : "login");
-      return;
-    }
-
-    await loadCurrentUserFromBackend();
-    clearAuthMessage();
-    clearClerkAuthHosts();
-    clerkAuthMountedMode = "";
-    syncAuthState();
-  } catch (error) {
-    clearCurrentUserSession();
-    if (error.accessDenied || error.statusCode === 403) {
-      document.body.classList.remove("auth-pending");
-      document.body.classList.add("auth-required");
-      hideCustomAuthForms();
-      clearClerkAuthHosts();
-      showAuthMessage("Access denied. Your IMS account is pending or not active.", "error");
-      return;
-    }
-    if (error.requiresSignIn || error.statusCode === 401) {
-      await showClerkAuthUi(route === "signup" ? "signup" : "login");
-      return;
-    }
-    syncAuthState();
-    showAuthMessage(error.message || "Auth provider not configured.", "error");
-  } finally {
-    clerkAuthStateSyncing = false;
-  }
-}
-
-async function signOutCurrentUser(message = "Signed out.") {
-  const activeClerk = await getClerk().catch(() => null);
-  if (activeClerk?.user) await activeClerk.signOut();
-  clearCurrentUserSession();
-  navigateAuth("login");
-  await showClerkAuthUi("login");
-  showAuthMessage(message, "success");
-}
-
-function setupPasswordToggles() {
-  document.querySelectorAll("[data-password-toggle]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const input = button.closest(".auth-field")?.querySelector("input");
-      if (!input) return;
-      const show = input.type === "password";
-      input.type = show ? "text" : "password";
-      button.setAttribute("aria-label", show ? "Hide password" : "Show password");
-      button.setAttribute("aria-pressed", String(show));
-      button.innerHTML = `<i data-lucide="${show ? "eye-off" : "eye"}"></i>`;
-      if (window.lucide) window.lucide.createIcons();
-    });
-  });
-}
-
-function setupAuthForms() {
-  document.querySelectorAll("[data-auth-mode]").forEach((tab) => {
-    tab.addEventListener("click", async () => {
-      const mode = tab.dataset.authMode;
-      clearAuthMessage();
-      setAuthMode(mode);
-      // Force a full navigation so Clerk UI re-initializes cleanly (avoids SPA mount issues)
-      window.location.href = authPath(mode);
-    });
-  });
-
-  document.getElementById("resendVerificationBtn")?.addEventListener("click", async (event) => {
-    event.preventDefault();
-    const activeClerk = await getClerk().catch(() => null);
-    await activeClerk?.client?.signUp?.prepareEmailAddressVerification({ strategy: "email_link" }).catch(() => null);
-    showAuthMessage("If Clerk can resend verification for this signup, a new email has been sent.", "success");
-  });
-
-  document.getElementById("checkVerificationBtn")?.addEventListener("click", async (event) => {
-    event.preventDefault();
-    window.location.reload();
-  });
-
-  document.getElementById("verifySignOutBtn")?.addEventListener("click", () => {
-    signOutCurrentUser("Signed out. You can log in with a different account.");
-  });
-}
-
-async function startAuthGuard() {
-  const initialRoute = authRouteFromLocation();
-  cleanupLegacyAuthStorage();
-  clearAuthMessage();
-  setAuthMode(initialRoute === "signup" ? "signup" : initialRoute === "verify" ? "verify" : "login");
-  window.addEventListener("popstate", syncClerkAuthState);
-  try {
-    const activeClerk = await getClerk();
-    if (activeClerk?.addListener) {
-      activeClerk.addListener(() => {
-        syncClerkAuthState();
-      });
-    }
-    await syncClerkAuthState();
-  } catch (error) {
-    clearCurrentUserSession();
-    syncAuthState();
-    showAuthMessage(error.message || "Auth provider not configured.", "error");
-  }
 }
 
 function escapeHtml(value) {
@@ -761,28 +326,13 @@ function normalizeSettings(rows) {
 }
 
 async function requestSettings(path = "", options = {}) {
-  let headers;
-  try {
-    headers = await authHeaders();
-  } catch (error) {
-    if (error.requiresSignIn || error.statusCode === 401) await showClerkAuthUi("login");
-    throw error;
-  }
   const response = await fetch(`${SETTINGS_API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...headers,
       ...(options.headers || {})
     }
   });
-  if (response.status === 401) {
-    const error = new Error("Sign in with Clerk to continue.");
-    error.statusCode = 401;
-    error.requiresSignIn = true;
-    await showClerkAuthUi("login");
-    throw error;
-  }
   if (response.status === 403) {
     const error = new Error("Admin access is required.");
     error.statusCode = 403;
@@ -948,13 +498,13 @@ function notificationSeed() {
       age: "today"
     },
     {
-      id: "po-authorization",
+      id: "po-approval",
       tab: "watching",
       unread: true,
       avatar: "PO",
       title: "Purchase order notification",
       body: state.purchaseOrders[0] ? `${state.purchaseOrders[0].poNumber} is ${state.purchaseOrders[0].status}` : "A PO will appear here when procurement starts",
-      meta: "Procurement • PO authorization",
+      meta: "Procurement - PO approval",
       age: "1 day ago"
     },
     {
@@ -1907,17 +1457,12 @@ document.addEventListener("keydown", (event) => {
 
 document.getElementById("topSettingsBtn")?.addEventListener("click", () => setView("settings"));
 
-// Profile dropdown: toggle menu and sign out
 document.getElementById("profileBtn")?.addEventListener("click", (event) => {
   event.stopPropagation();
   const pm = document.getElementById("profileMenu");
   if (!pm) return;
   const open = pm.classList.toggle("show");
   pm.setAttribute("aria-hidden", String(!open));
-});
-
-document.getElementById("signOutBtn")?.addEventListener("click", () => {
-  signOutCurrentUser();
 });
 
 document.getElementById("settingsTabs").addEventListener("click", (event) => {
@@ -2190,10 +1735,9 @@ document.getElementById("globalSearch").addEventListener("input", (event) => {
   });
 });
 
-setupAuthForms();
 applyTheme(localStorage.getItem(THEME_STORAGE_KEY));
 applyAdminVisibility();
 addRequestLine();
 addItemTypeLine();
 render();
-startAuthGuard();
+syncAuthState();

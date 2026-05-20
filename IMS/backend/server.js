@@ -5,11 +5,11 @@ const inventoryRoutes = require("./routes/inventoryRoutes");
 const imsRoutes = require("./routes/imsRoutes");
 const { errorHandler, notFoundHandler } = require("./middleware/errorMiddleware");
 const { corsMiddleware } = require("./middleware/corsMiddleware");
-const { testDatabaseConnection } = require("./config/database");
 const config = require("./config/env");
+const { initializeDatabase, testDatabaseConnection } = require("./config/database");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.port;
 const frontendPath = path.resolve(__dirname, "../frontend");
 
 app.use(corsMiddleware);
@@ -31,29 +31,6 @@ app.get("/api/health", async (req, res, next) => {
   }
 });
 
-function publicConfig() {
-  return {
-    authProvider: config.auth.provider,
-    clerkPublishableKey: config.auth.clerkPublishableKey
-  };
-}
-
-app.get("/api/config", (req, res) => {
-  res.json(publicConfig());
-});
-
-app.get("/api/auth/config", (req, res) => {
-  const data = publicConfig();
-  res.json({
-    success: true,
-    data: {
-      provider: data.authProvider,
-      authProvider: data.authProvider,
-      clerkPublishableKey: data.clerkPublishableKey
-    }
-  });
-});
-
 app.use("/api", imsRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/inventory", inventoryRoutes);
@@ -65,6 +42,18 @@ app.get("*", (req, res, next) => {
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`IMS server running at http://localhost:${PORT}`);
-});
+async function startServer() {
+  try {
+    await initializeDatabase();
+    await testDatabaseConnection();
+    app.listen(PORT, () => {
+      console.log(`IMS server running at http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error("Failed to initialize IMS database connection.");
+    console.error(error.message);
+    process.exit(1);
+  }
+}
+
+startServer();

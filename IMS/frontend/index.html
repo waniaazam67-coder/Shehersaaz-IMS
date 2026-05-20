@@ -8,60 +8,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=clerk-ui-mount-1">
+  <link rel="stylesheet" href="css/styles.css?v=portal-1">
 </head>
-<body class="auth-pending">
-  <section class="auth-screen" id="authScreen" aria-label="IMS account access">
-    <div class="auth-panel">
-      <div class="auth-brand auth-brand-inline">
-        <span class="auth-brand-mark"><i data-lucide="package-open"></i></span>
-        <strong>IMS Portal</strong>
-      </div>
-      <div class="auth-copy-mobile">
-        <p class="auth-kicker">Shehersaaz Inventory Management</p>
-      </div>
-      <div class="auth-tabs" role="tablist" aria-label="Authentication options">
-        <button class="auth-tab active" id="loginTab" type="button" data-auth-mode="login">Login</button>
-        <button class="auth-tab" id="signupTab" type="button" data-auth-mode="signup">Sign up</button>
-      </div>
-      <div class="auth-message" id="authMessage" role="status" aria-live="polite"></div>
-      <div class="clerk-auth-host" id="clerk-sign-in"></div>
-      <div class="clerk-auth-host" id="clerk-sign-up"></div>
-
-      <div class="auth-form verify-email-form" id="verifyEmailPanel" data-auth-form="verify">
-        <div class="section-title">
-          <h2>Verify your email</h2>
-          <p>We sent an activation link to your inbox. Confirm your email, then return to login to open IMS.</p>
-        </div>
-        <div class="verify-email-card">
-          <span><i data-lucide="mail-check"></i></span>
-          <strong id="verifyEmailAddress">your email address</strong>
-          <p>Check your inbox and spam folder. Unverified accounts cannot access Inventory, Requests, PO, GRN, Settings, or Dashboard.</p>
-        </div>
-        <button class="secondary auth-wide-btn" id="resendVerificationBtn" type="button"><i data-lucide="send"></i>Resend verification email</button>
-        <button class="primary auth-submit" id="checkVerificationBtn" type="button"><i data-lucide="shield-check"></i>I have verified</button>
-        <div class="auth-switch-copy"><button type="button" id="verifySignOutBtn">Return to login</button></div>
-      </div>
-    </div>
-
-    <div class="auth-visual">
-      <div class="auth-brand">
-        <span class="auth-brand-mark"><i data-lucide="package-open"></i></span>
-        <strong>IMS Portal</strong>
-      </div>
-      <div class="auth-copy">
-        <p class="auth-kicker">Shehersaaz Inventory Management</p>
-        <h2>Welcome to IMS Portal</h2>
-      <div class="auth-feature-card">
-        <h2>Manage stock, approvals, and procurement in one place</h2>
-        <p>Track requests from creation to issue, review low stock, and keep procurement records moving.</p>
-        <div class="auth-avatar-stack" aria-hidden="true"><span>IM</span><span>PO</span><span>GR</span><b>+2</b></div>
-      </div>
-      <div class="auth-orbit auth-orbit-one"></div>
-      <div class="auth-orbit auth-orbit-two"></div>
-    </div>
-  </section>
-
+<body>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Main navigation">
       <div class="brand">
@@ -116,9 +65,6 @@
           <button class="icon-btn admin-only" id="topSettingsBtn" type="button" aria-label="Settings"><i data-lucide="settings"></i></button>
           <div class="profile-wrap">
             <button class="profile" id="profileBtn" type="button" aria-label="Inventory Manager" data-profile-name="Inventory Manager"><span class="avatar">IM</span><span class="profile-name">Inventory Manager</span><i data-lucide="chevron-down"></i></button>
-            <div class="profile-menu" id="profileMenu" aria-hidden="true">
-              <button class="profile-menu-item" id="signOutBtn" type="button">Sign out</button>
-            </div>
           </div>
         </div>
       </header>
@@ -425,6 +371,6 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="js/inventory-data.js?v=po-document-2"></script>
-  <script src="js/script.js?v=clerk-ui-mount-1"></script>
+  <script src="js/script.js?v=portal-1"></script>
 </body>
 </html>

@@ -43,13 +43,6 @@ DB_NAME=ims_system
 DB_USER=your_mysql_user
 DB_PASSWORD=your_mysql_password
 PORT=3000
-
-AUTH_PROVIDER=none
-ENABLE_DEV_AUTH=false
-DEV_AUTH_EMAIL=dev.admin@shehersaaz.local
-DEV_AUTH_NAME=Development Admin
-CLERK_SECRET_KEY=
-CLERK_PUBLISHABLE_KEY=
 ```
 
 `.env` is ignored by git. Keep real credentials out of commits.
@@ -81,7 +74,7 @@ The app serves the frontend from `IMS/frontend` and exposes backend APIs under `
 - Settings APIs are grouped under `IMS/backend/routes/settingsRoutes.js`.
 - Controller logic lives in `IMS/backend/controllers`.
 - Database write logic lives in `IMS/backend/services`.
-- Shared middleware handles admin access, CORS, 404 responses, and server errors.
+- Shared middleware handles CORS, 404 responses, and server errors.
 
 ## Main API
 
@@ -90,7 +83,6 @@ The app serves the frontend from `IMS/frontend` and exposes backend APIs under `
 - `GET /api/settings/:group`
 - `PUT /api/settings/:group`
 - `PUT /api/settings/:group/:key`
-- `GET /api/auth/me`
 - `GET|POST /api/requests`
 - `GET|POST /api/items`
 - `GET|POST /api/vendors`
@@ -100,13 +92,3 @@ The app serves the frontend from `IMS/frontend` and exposes backend APIs under `
 - `POST /api/stock/in/manual`
 - `POST /api/stock/out`
 - `GET /api/audit`
-
-Protected routes use `IMS/backend/services/authProviderService.js`. Until a managed provider is connected, they return `401 Auth provider not configured`, unless `NODE_ENV=development` and `ENABLE_DEV_AUTH=true`.
-
-## Authentication Notes
-
-- Managed authentication is intentionally paused while the app is prepared for Clerk or another provider.
-- The frontend login/signup UI remains visible, but actions show provider-neutral setup messages.
-- Backend protected APIs never trust frontend roles or browser storage.
-- In development only, set `NODE_ENV=development` and `ENABLE_DEV_AUTH=true` to use the local mock identity from `DEV_AUTH_EMAIL`.
-- Backend role/status/permission checks still load from MySQL.

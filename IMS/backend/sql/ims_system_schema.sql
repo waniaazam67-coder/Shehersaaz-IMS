@@ -38,12 +38,8 @@ CREATE TABLE IF NOT EXISTS locations (
 
 CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  auth_provider_subject VARCHAR(255) NULL,
   full_name VARCHAR(180) NOT NULL,
   email VARCHAR(255) NOT NULL,
-  password_hash VARCHAR(255) NULL,
-  email_verified TINYINT(1) NOT NULL DEFAULT 0,
-  account_status ENUM('pending', 'active', 'inactive') NOT NULL DEFAULT 'pending',
   department_id INT UNSIGNED NULL,
   location_id INT UNSIGNED NULL,
   is_line_manager TINYINT(1) NOT NULL DEFAULT 0,
@@ -55,7 +51,6 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email),
-  UNIQUE KEY uq_users_auth_provider_subject (auth_provider_subject),
   KEY idx_users_department_id (department_id),
   KEY idx_users_location_id (location_id),
   KEY idx_users_active (is_active, deleted_at),
@@ -493,10 +488,48 @@ DELIMITER ;
 
 CALL sp_add_column_if_missing('items', 'reorder_level', 'reorder_level DECIMAL(14,4) NOT NULL DEFAULT 0');
 CALL sp_add_column_if_missing('items', 'deleted_at', 'deleted_at TIMESTAMP NULL');
+CALL sp_add_column_if_missing('items', 'created_by', 'created_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('items', 'updated_by', 'updated_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('departments', 'code', 'code VARCHAR(40) NULL');
+CALL sp_add_column_if_missing('departments', 'is_active', 'is_active TINYINT(1) NOT NULL DEFAULT 1');
+CALL sp_add_column_if_missing('departments', 'deleted_at', 'deleted_at TIMESTAMP NULL');
+CALL sp_add_column_if_missing('departments', 'created_by', 'created_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('departments', 'updated_by', 'updated_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('locations', 'code', 'code VARCHAR(40) NULL');
+CALL sp_add_column_if_missing('locations', 'is_active', 'is_active TINYINT(1) NOT NULL DEFAULT 1');
 CALL sp_add_column_if_missing('locations', 'deleted_at', 'deleted_at TIMESTAMP NULL');
-CALL sp_add_column_if_missing('users', 'auth_provider_subject', 'auth_provider_subject VARCHAR(255) NULL');
-CALL sp_add_column_if_missing('users', 'email_verified', 'email_verified TINYINT(1) NOT NULL DEFAULT 0');
-CALL sp_add_column_if_missing('users', 'account_status', 'account_status ENUM(''pending'', ''active'', ''inactive'') NOT NULL DEFAULT ''pending''');
+CALL sp_add_column_if_missing('locations', 'created_by', 'created_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('locations', 'updated_by', 'updated_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('users', 'deleted_at', 'deleted_at TIMESTAMP NULL');
+CALL sp_add_column_if_missing('users', 'created_by', 'created_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('users', 'updated_by', 'updated_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('vendors', 'deleted_at', 'deleted_at TIMESTAMP NULL');
+CALL sp_add_column_if_missing('vendors', 'created_by', 'created_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('vendors', 'updated_by', 'updated_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('purchase_orders', 'expected_date', 'expected_date DATE NULL');
+CALL sp_add_column_if_missing('purchase_orders', 'delivery_location_id', 'delivery_location_id INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('purchase_orders', 'subtotal_amount', 'subtotal_amount DECIMAL(14,4) NOT NULL DEFAULT 0');
+CALL sp_add_column_if_missing('purchase_orders', 'tax_amount', 'tax_amount DECIMAL(14,4) NOT NULL DEFAULT 0');
+CALL sp_add_column_if_missing('purchase_orders', 'total_amount', 'total_amount DECIMAL(14,4) NOT NULL DEFAULT 0');
+CALL sp_add_column_if_missing('purchase_orders', 'deleted_at', 'deleted_at TIMESTAMP NULL');
+CALL sp_add_column_if_missing('purchase_orders', 'created_by', 'created_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('purchase_orders', 'updated_by', 'updated_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('grns', 'grn_number', 'grn_number VARCHAR(80) NULL');
+CALL sp_add_column_if_missing('grns', 'purchase_order_id', 'purchase_order_id INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('grns', 'status', 'status VARCHAR(80) NOT NULL DEFAULT ''Draft''');
+CALL sp_add_column_if_missing('grns', 'created_by', 'created_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('grns', 'updated_by', 'updated_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('requests', 'request_number', 'request_number VARCHAR(80) NULL');
+CALL sp_add_column_if_missing('requests', 'deleted_at', 'deleted_at TIMESTAMP NULL');
+CALL sp_add_column_if_missing('requests', 'created_by', 'created_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('requests', 'updated_by', 'updated_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('request_items', 'line_no', 'line_no SMALLINT UNSIGNED NOT NULL DEFAULT 1');
+CALL sp_add_column_if_missing('request_items', 'quantity_approved', 'quantity_approved DECIMAL(14,4) NOT NULL DEFAULT 0');
+CALL sp_add_column_if_missing('request_items', 'source_location_id', 'source_location_id INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('request_items', 'line_status', 'line_status VARCHAR(80) NOT NULL DEFAULT ''Pending Approval''');
+CALL sp_add_column_if_missing('transport_requests', 'request_number', 'request_number VARCHAR(80) NULL');
+CALL sp_add_column_if_missing('transport_requests', 'created_by', 'created_by INT UNSIGNED NULL');
+CALL sp_add_column_if_missing('transport_requests', 'updated_by', 'updated_by INT UNSIGNED NULL');
 
 DROP PROCEDURE IF EXISTS sp_add_column_if_missing;
 
@@ -598,6 +631,24 @@ INSERT INTO item_categories (name)
 VALUES ('RWHU'), ('Stationary'), ('Progressive')
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
+INSERT INTO departments (id, code, name, is_active)
+VALUES (1, 'ADMIN', 'Administration', 1)
+ON DUPLICATE KEY UPDATE code = VALUES(code), name = VALUES(name), is_active = VALUES(is_active), deleted_at = NULL;
+
+INSERT INTO locations (id, code, name, is_active)
+VALUES (1, 'MAIN', 'Main Store', 1)
+ON DUPLICATE KEY UPDATE code = VALUES(code), name = VALUES(name), is_active = VALUES(is_active), deleted_at = NULL;
+
+INSERT INTO users (id, full_name, email, department_id, location_id, is_line_manager, is_active)
+VALUES (1, 'Inventory Manager', 'admin@shehersaaz.local', 1, 1, 1, 1)
+ON DUPLICATE KEY UPDATE
+  full_name = VALUES(full_name),
+  department_id = VALUES(department_id),
+  location_id = VALUES(location_id),
+  is_line_manager = VALUES(is_line_manager),
+  is_active = VALUES(is_active),
+  deleted_at = NULL;
+
 INSERT INTO roles (name, description, is_system)
 VALUES
   ('Admin', 'Full administrative access.', 1),
@@ -633,3 +684,8 @@ JOIN permissions p ON (
   OR (r.name = 'Procurement Officer' AND p.permission_key IN ('view_inventory', 'manage_purchase_orders', 'manage_grns'))
   OR (r.name = 'Approver' AND p.permission_key IN ('create_requests', 'approve_requests', 'view_inventory'))
 );
+
+INSERT IGNORE INTO user_roles (user_id, role_id, assigned_by)
+SELECT 1, id, 1
+FROM roles
+WHERE name = 'Admin';
